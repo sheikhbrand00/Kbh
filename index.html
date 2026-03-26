@@ -1,107 +1,784 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>YouTube Channel Website</title>
+================================================================
+       STRYD SHOES STORE — COMPACT CODE (~700-800 lines)
+================================================================
+Includes: App, Session Hook, ShoeCard, Home Page,
+          DB Schema, Backend API Routes
+================================================================
 
-<style>
+---- FILE: artifacts/shoes/src/App.tsx ----
 
-body{
-margin:0;
-font-family:Arial;
-background:#f5f5f5;
+import { Switch, Route, Router as WouterRouter } from "wouter";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Toaster } from "@/components/ui/toaster";
+import Home from "./pages/Home";
+import Shoes from "./pages/Shoes";
+import ShoeDetail from "./pages/ShoeDetail";
+import Cart from "./pages/Cart";
+import Checkout from "./pages/Checkout";
+import OrderConfirmation from "./pages/OrderConfirmation";
+import Wishlist from "./pages/Wishlist";
+import NotFound from "./pages/not-found";
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: false,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
+function Router() {
+  return (
+    <Switch>
+      <Route path="/" component={Home} />
+      <Route path="/shoes" component={Shoes} />
+      <Route path="/shoes/:id" component={ShoeDetail} />
+      <Route path="/cart" component={Cart} />
+      <Route path="/checkout" component={Checkout} />
+      <Route path="/orders/:id" component={OrderConfirmation} />
+      <Route path="/wishlist" component={Wishlist} />
+      <Route component={NotFound} />
+    </Switch>
+  );
 }
 
-header{
-background:#ff0000;
-color:white;
-text-align:center;
-padding:20px;
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+        <Router />
+      </WouterRouter>
+      <Toaster />
+    </QueryClientProvider>
+  );
 }
 
-header h1{
-margin:0;
+export default App;
+
+
+---- FILE: artifacts/shoes/src/hooks/use-session.ts ----
+
+import { v4 as uuidv4 } from "uuid";
+
+const SESSION_KEY = "stryd_session_id";
+
+export function getSessionId(): string {
+  if (typeof window === "undefined") return "";
+  
+  let sessionId = localStorage.getItem(SESSION_KEY);
+  if (!sessionId) {
+    sessionId = uuidv4();
+    localStorage.setItem(SESSION_KEY, sessionId);
+  }
+  return sessionId;
 }
 
-.container{
-width:90%;
-margin:auto;
-margin-top:30px;
+
+---- FILE: artifacts/shoes/src/components/ShoeCard.tsx ----
+
+import React from "react";
+import { Link } from "wouter";
+import { Heart } from "lucide-react";
+import { motion } from "framer-motion";
+import { Button } from "./ui/button";
+import type { Shoe } from "@workspace/api-client-react";
+import { useToggleWishlist } from "@workspace/api-client-react";
+import { getSessionId } from "@/hooks/use-session";
+import { useQueryClient } from "@tanstack/react-query";
+
+interface ShoeCardProps {
+  shoe: Shoe;
+  isWishlisted?: boolean;
 }
 
-.video{
-text-align:center;
-margin-bottom:30px;
+export function ShoeCard({ shoe, isWishlisted = false }: ShoeCardProps) {
+  const queryClient = useQueryClient();
+  const sessionId = getSessionId();
+  
+  const toggleMutation = useToggleWishlist({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/wishlist"] });
+      }
+    }
+  });
+
+  const handleWishlist = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleMutation.mutate({
+      data: { sessionId, shoeId: shoe.id }
+    });
+  };
+
+  return (
+    <Link href={`/shoes/${shoe.id}`}>
+      <motion.div 
+        whileHover={{ y: -8 }}
+        className="group relative flex flex-col bg-card border border-border overflow-hidden cursor-pointer transition-colors hover:border-primary/50"
+      >
+        {/* Badges */}
+        <div className="absolute top-4 left-4 z-10 flex flex-col gap-2">
+          {shoe.newArrival && (
+            <span className="bg-primary text-primary-foreground font-display px-3 py-1 text-sm tracking-wider">
+              NEW
+            </span>
+          )}
+          {shoe.badge && (
+            <span className="bg-foreground text-background font-display px-3 py-1 text-sm tracking-wider">
+              {shoe.badge}
+            </span>
+          )}
+        </div>
+
+        {/* Wishlist Button */}
+        <button 
+          onClick={handleWishlist}
+          disabled={toggleMutation.isPending}
+          className="absolute top-4 right-4 z-10 p-2 bg-background/50 backdrop-blur-md border border-border hover:border-primary transition-colors disabled:opacity-50"
+        >
+          <Heart 
+            className={`w-5 h-5 transition-colors ${isWishlisted ? "fill-primary text-primary" : "text-foreground group-hover:text-primary"}`} 
+          />
+        </button>
+
+        {/* Image Container */}
+        <div className="relative aspect-square overflow-hidden bg-secondary/50 p-6 flex items-center justify-center">
+          <motion.img 
+            src={shoe.imageUrl} 
+            alt={shoe.name}
+            className="w-full h-full object-contain drop-shadow-2xl mix-blend-normal"
+            whileHover={{ scale: 1.1, rotate: -5 }}
+            transition={{ type: "spring", stiffness: 200, damping: 20 }}
+          />
+        </div>
+
+        {/* Info Container */}
+        <div className="p-5 flex flex-col flex-grow">
+          <div className="flex justify-between items-start mb-2">
+            <span className="text-xs font-bold text-muted-foreground tracking-widest uppercase">
+              {shoe.brandName}
+            </span>
+            <div className="flex items-center gap-1">
+              <span className="text-xs font-bold text-primary">★ {shoe.rating.toFixed(1)}</span>
+            </div>
+          </div>
+          
+          <h3 className="font-display text-2xl leading-none mb-4 group-hover:text-primary transition-colors">
+            {shoe.name}
+          </h3>
+          
+          <div className="mt-auto flex items-end justify-between">
+            <div className="flex flex-col">
+              {shoe.originalPrice && (
+                <span className="text-sm text-muted-foreground line-through">
+                  ${shoe.originalPrice.toFixed(2)}
+                </span>
+              )}
+              <span className="font-display text-2xl text-foreground">
+                ${shoe.price.toFixed(2)}
+              </span>
+            </div>
+          </div>
+        </div>
+        
+        {/* Hover Highlight line */}
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-primary transform scale-x-0 group-hover:scale-x-100 transition-transform origin-left duration-300" />
+      </motion.div>
+    </Link>
+  );
 }
 
-iframe{
-width:100%;
-max-width:700px;
-height:400px;
-border:none;
+
+---- FILE: artifacts/shoes/src/pages/Home.tsx ----
+
+import React from "react";
+import { Link } from "wouter";
+import { Layout } from "@/components/Layout";
+import { ShoeCard } from "@/components/ShoeCard";
+import { Button } from "@/components/ui/button";
+import { useGetFeaturedShoes, useGetNewArrivals, useListBrands } from "@workspace/api-client-react";
+import { motion } from "framer-motion";
+import { ArrowRight, Zap, ShieldCheck, RefreshCw } from "lucide-react";
+
+export default function Home() {
+  const { data: featuredShoes, isLoading: isFeaturedLoading } = useGetFeaturedShoes();
+  const { data: newArrivals, isLoading: isNewArrivalsLoading } = useGetNewArrivals();
+  const { data: brands } = useListBrands();
+
+  return (
+    <Layout>
+      {/* Hero Section */}
+      <section className="relative h-[85vh] w-full bg-background overflow-hidden flex items-center">
+        <div className="absolute inset-0 z-0">
+          <img 
+            src={`${import.meta.env.BASE_URL}images/texture-dark.png`} 
+            alt="Texture" 
+            className="w-full h-full object-cover opacity-50"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent" />
+        </div>
+        
+        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3/4 h-[120%] z-0 pointer-events-none hidden md:block">
+           <motion.img 
+            initial={{ x: 100, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            transition={{ duration: 1, ease: "easeOut", delay: 0.2 }}
+            src={`${import.meta.env.BASE_URL}images/hero-bg.png`}
+            alt="Hero Sneaker"
+            className="w-full h-full object-cover mix-blend-lighten"
+          />
+        </div>
+
+        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
+          <motion.div 
+            initial={{ y: 50, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ duration: 0.8, ease: "easeOut" }}
+            className="max-w-2xl"
+          >
+            <h1 className="text-7xl sm:text-8xl md:text-[8rem] font-display leading-[0.85] tracking-tighter text-foreground mb-6">
+              DEFY <br />
+              <span className="text-transparent text-stroke-primary">GRAVITY.</span>
+            </h1>
+            <p className="text-lg md:text-xl font-sans text-muted-foreground mb-10 max-w-md">
+              Uncompromising performance meets premium streetwear. Engineered for those who never stop moving.
+            </p>
+            <div className="flex flex-wrap gap-4">
+              <Link href="/shoes">
+                <Button size="lg" className="w-full sm:w-auto">
+                  SHOP THE DROP <ArrowRight className="ml-2 w-5 h-5" />
+                </Button>
+              </Link>
+              <Link href="/shoes?category=running">
+                <Button size="lg" variant="outline" className="w-full sm:w-auto bg-background/50 backdrop-blur-md">
+                  EXPLORE RUNNING
+                </Button>
+              </Link>
+            </div>
+          </motion.div>
+        </div>
+        
+        {/* Scrolling ticker */}
+        <div className="absolute bottom-0 left-0 w-full overflow-hidden bg-primary py-3 flex">
+          <motion.div 
+            animate={{ x: ["0%", "-50%"] }}
+            transition={{ repeat: Infinity, ease: "linear", duration: 10 }}
+            className="flex whitespace-nowrap"
+          >
+            {[...Array(10)].map((_, i) => (
+              <span key={i} className="text-primary-foreground font-display text-2xl tracking-widest mx-8 uppercase">
+                Free Worldwide Shipping Over $200
+              </span>
+            ))}
+          </motion.div>
+        </div>
+      </section>
+
+      {/* Featured Section */}
+      <section className="py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex flex-col md:flex-row md:items-end justify-between mb-12">
+          <div>
+            <h2 className="text-5xl font-display text-foreground">FEATURED DROPS</h2>
+            <p className="text-muted-foreground font-sans mt-2">Curated heat for your rotation.</p>
+          </div>
+          <Link href="/shoes" className="text-primary font-display text-xl mt-4 md:mt-0 hover:underline underline-offset-4 flex items-center">
+            VIEW ALL <ArrowRight className="ml-1 w-5 h-5" />
+          </Link>
+        </div>
+
+        {isFeaturedLoading ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="aspect-[3/4] bg-card animate-pulse border border-border" />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {featuredShoes?.slice(0, 4).map(shoe => (
+              <ShoeCard key={shoe.id} shoe={shoe} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Categories Grid */}
+      <section className="py-12 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-[600px]">
+          <Link href="/shoes?gender=men" className="relative group overflow-hidden border border-border">
+            <div className="absolute inset-0 bg-zinc-900 transition-transform duration-700 group-hover:scale-105" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent z-10" />
+            <div className="absolute bottom-8 left-8 z-20">
+              <h3 className="text-5xl font-display text-foreground mb-2">MEN'S</h3>
+              <span className="text-primary font-bold tracking-widest flex items-center group-hover:translate-x-2 transition-transform">
+                SHOP NOW <ArrowRight className="ml-2 w-4 h-4" />
+              </span>
+            </div>
+          </Link>
+          <Link href="/shoes?gender=women" className="relative group overflow-hidden border border-border">
+            <div className="absolute inset-0 bg-zinc-800 transition-transform duration-700 group-hover:scale-105" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent z-10" />
+            <div className="absolute bottom-8 left-8 z-20">
+              <h3 className="text-5xl font-display text-foreground mb-2">WOMEN'S</h3>
+              <span className="text-primary font-bold tracking-widest flex items-center group-hover:translate-x-2 transition-transform">
+                SHOP NOW <ArrowRight className="ml-2 w-4 h-4" />
+              </span>
+            </div>
+          </Link>
+          <div className="flex flex-col gap-6">
+            <Link href="/shoes?category=running" className="relative group overflow-hidden border border-border flex-1">
+              <div className="absolute inset-0 bg-zinc-700 transition-transform duration-700 group-hover:scale-105" />
+              <div className="absolute inset-0 bg-black/40 z-10 group-hover:bg-black/20 transition-colors" />
+              <div className="absolute inset-0 flex items-center justify-center z-20">
+                <h3 className="text-4xl font-display text-foreground tracking-widest">RUNNING</h3>
+              </div>
+            </Link>
+            <Link href="/shoes?category=lifestyle" className="relative group overflow-hidden border border-border flex-1">
+              <div className="absolute inset-0 bg-zinc-950 transition-transform duration-700 group-hover:scale-105" />
+              <div className="absolute inset-0 bg-primary/10 z-10 group-hover:bg-primary/20 transition-colors mix-blend-color-dodge" />
+              <div className="absolute inset-0 flex items-center justify-center z-20">
+                <h3 className="text-4xl font-display text-primary tracking-widest">LIFESTYLE</h3>
+              </div>
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* Trust Section */}
+      <section className="py-24 border-t border-b border-border bg-card">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-12 text-center">
+            <div className="flex flex-col items-center">
+              <div className="w-16 h-16 bg-background border border-border rounded-full flex items-center justify-center mb-6 text-primary">
+                <Zap className="w-8 h-8" />
+              </div>
+              <h4 className="font-display text-2xl mb-2">EXPRESS DELIVERY</h4>
+              <p className="text-muted-foreground font-sans text-sm max-w-xs">Get your gear fast. Free express shipping on all orders over $200 globally.</p>
+            </div>
+            <div className="flex flex-col items-center">
+              <div className="w-16 h-16 bg-background border border-border rounded-full flex items-center justify-center mb-6 text-primary">
+                <ShieldCheck className="w-8 h-8" />
+              </div>
+              <h4 className="font-display text-2xl mb-2">100% AUTHENTIC</h4>
+              <p className="text-muted-foreground font-sans text-sm max-w-xs">Every pair is verified by our experts. We guarantee authenticity or your money back.</p>
+            </div>
+            <div className="flex flex-col items-center">
+              <div className="w-16 h-16 bg-background border border-border rounded-full flex items-center justify-center mb-6 text-primary">
+                <RefreshCw className="w-8 h-8" />
+              </div>
+              <h4 className="font-display text-2xl mb-2">EASY RETURNS</h4>
+              <p className="text-muted-foreground font-sans text-sm max-w-xs">Not the perfect fit? Return them within 30 days, no questions asked.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </Layout>
+  );
 }
 
-.subscribe{
-text-align:center;
-margin:30px;
+
+---- FILE: lib/db/src/schema/shoes.ts ----
+
+import { pgTable, text, serial, decimal, integer, boolean, timestamp, real } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod/v4";
+
+export const brandsTable = pgTable("brands", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  slug: text("slug").notNull().unique(),
+  logoUrl: text("logo_url"),
+  description: text("description"),
+  shoeCount: integer("shoe_count").default(0),
+});
+
+export const shoesTable = pgTable("shoes", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+  originalPrice: decimal("original_price", { precision: 10, scale: 2 }),
+  imageUrl: text("image_url").notNull(),
+  images: text("images").array().notNull().default([]),
+  brandId: integer("brand_id").notNull().references(() => brandsTable.id),
+  category: text("category").notNull(),
+  gender: text("gender").notNull(),
+  sizes: real("sizes").array().notNull().default([]),
+  colors: text("colors").array().notNull().default([]),
+  rating: decimal("rating", { precision: 3, scale: 2 }).default("0"),
+  reviewCount: integer("review_count").default(0),
+  stock: integer("stock").notNull().default(0),
+  featured: boolean("featured").default(false),
+  newArrival: boolean("new_arrival").default(false),
+  badge: text("badge"),
+  tags: text("tags").array().default([]),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const shoeCartsTable = pgTable("shoe_carts", {
+  id: serial("id").primaryKey(),
+  sessionId: text("session_id").notNull().unique(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const shoeCartItemsTable = pgTable("shoe_cart_items", {
+  id: serial("id").primaryKey(),
+  cartId: integer("cart_id").notNull().references(() => shoeCartsTable.id),
+  shoeId: integer("shoe_id").notNull().references(() => shoesTable.id),
+  size: real("size").notNull(),
+  color: text("color").notNull(),
+  quantity: integer("quantity").notNull().default(1),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const shoeOrdersTable = pgTable("shoe_orders", {
+  id: serial("id").primaryKey(),
+  sessionId: text("session_id").notNull(),
+  email: text("email").notNull(),
+  firstName: text("first_name").notNull(),
+  lastName: text("last_name").notNull(),
+  address: text("address").notNull(),
+  city: text("city").notNull(),
+  state: text("state").notNull(),
+  zipCode: text("zip_code").notNull(),
+  country: text("country").notNull(),
+  paymentMethod: text("payment_method").notNull(),
+  subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull(),
+  total: decimal("total", { precision: 10, scale: 2 }).notNull(),
+  status: text("status").notNull().default("confirmed"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const shoeOrderItemsTable = pgTable("shoe_order_items", {
+  id: serial("id").primaryKey(),
+  orderId: integer("order_id").notNull().references(() => shoeOrdersTable.id),
+  shoeId: integer("shoe_id").notNull().references(() => shoesTable.id),
+  shoeName: text("shoe_name").notNull(),
+  shoeImageUrl: text("shoe_image_url").notNull(),
+  brandName: text("brand_name").notNull(),
+  size: real("size").notNull(),
+  color: text("color").notNull(),
+  price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+  quantity: integer("quantity").notNull(),
+  subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull(),
+});
+
+export const shoeWishlistTable = pgTable("shoe_wishlist", {
+  id: serial("id").primaryKey(),
+  sessionId: text("session_id").notNull(),
+  shoeId: integer("shoe_id").notNull().references(() => shoesTable.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertBrandSchema = createInsertSchema(brandsTable).omit({ id: true });
+export const insertShoeSchema = createInsertSchema(shoesTable).omit({ id: true, createdAt: true });
+
+export type Brand = typeof brandsTable.$inferSelect;
+export type Shoe = typeof shoesTable.$inferSelect;
+export type ShoeCart = typeof shoeCartsTable.$inferSelect;
+export type ShoeCartItem = typeof shoeCartItemsTable.$inferSelect;
+export type ShoeOrder = typeof shoeOrdersTable.$inferSelect;
+export type ShoeOrderItem = typeof shoeOrderItemsTable.$inferSelect;
+
+
+---- FILE: artifacts/api-server/src/routes/shoes.ts ----
+
+import { Router, type IRouter } from "express";
+import { db } from "@workspace/db";
+import {
+  brandsTable,
+  shoesTable,
+  shoeCartsTable,
+  shoeCartItemsTable,
+  shoeOrdersTable,
+  shoeOrderItemsTable,
+  shoeWishlistTable,
+} from "@workspace/db";
+import { eq, ilike, and, sql, desc, asc, gte, lte, inArray } from "drizzle-orm";
+
+const router: IRouter = Router();
+
+function formatShoe(s: any, brandName: string, brandLogo?: string) {
+  return {
+    id: s.id,
+    name: s.name,
+    description: s.description,
+    price: parseFloat(s.price),
+    originalPrice: s.originalPrice ? parseFloat(s.originalPrice) : undefined,
+    imageUrl: s.imageUrl,
+    images: s.images ?? [],
+    brandId: s.brandId,
+    brandName,
+    brandLogo: brandLogo ?? "",
+    category: s.category,
+    gender: s.gender,
+    sizes: s.sizes ?? [],
+    colors: s.colors ?? [],
+    rating: parseFloat(s.rating ?? "0"),
+    reviewCount: s.reviewCount ?? 0,
+    stock: s.stock ?? 0,
+    featured: s.featured ?? false,
+    newArrival: s.newArrival ?? false,
+    badge: s.badge ?? undefined,
+    tags: s.tags ?? [],
+  };
 }
 
-.subscribe a{
-background:#ff0000;
-color:white;
-padding:12px 25px;
-text-decoration:none;
-font-size:18px;
-border-radius:5px;
+router.get("/shoes", async (req, res) => {
+  const { brand, category, gender, search, minPrice, maxPrice, limit = "20", offset = "0", sort } = req.query as any;
+  const lim = parseInt(limit);
+  const off = parseInt(offset);
+  const conditions: any[] = [];
+
+  if (search) conditions.push(ilike(shoesTable.name, `%${search}%`));
+  if (category) conditions.push(eq(shoesTable.category, category));
+  if (gender) conditions.push(eq(shoesTable.gender, gender));
+  if (minPrice) conditions.push(gte(shoesTable.price, minPrice));
+  if (maxPrice) conditions.push(lte(shoesTable.price, maxPrice));
+  if (brand) {
+    const br = await db.select().from(brandsTable).where(eq(brandsTable.slug, brand)).limit(1);
+    if (br[0]) conditions.push(eq(shoesTable.brandId, br[0].id));
+  }
+
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  let orderBy: any;
+  if (sort === "price_asc") orderBy = asc(shoesTable.price);
+  else if (sort === "price_desc") orderBy = desc(shoesTable.price);
+  else if (sort === "newest") orderBy = desc(shoesTable.createdAt);
+  else orderBy = desc(shoesTable.reviewCount);
+
+  const [shoes, countResult] = await Promise.all([
+    db.select({ shoe: shoesTable, brand: brandsTable })
+      .from(shoesTable)
+      .leftJoin(brandsTable, eq(shoesTable.brandId, brandsTable.id))
+      .where(where).orderBy(orderBy).limit(lim).offset(off),
+    db.select({ count: sql<number>`count(*)::int` }).from(shoesTable).where(where),
+  ]);
+
+  res.json({
+    shoes: shoes.map((r) => formatShoe(r.shoe, r.brand?.name ?? "", r.brand?.logoUrl ?? "")),
+    total: countResult[0]?.count ?? 0,
+    limit: lim,
+    offset: off,
+  });
+});
+
+router.get("/shoes/featured", async (_req, res) => {
+  const shoes = await db.select({ shoe: shoesTable, brand: brandsTable })
+    .from(shoesTable)
+    .leftJoin(brandsTable, eq(shoesTable.brandId, brandsTable.id))
+    .where(eq(shoesTable.featured, true))
+    .limit(8);
+  res.json(shoes.map((r) => formatShoe(r.shoe, r.brand?.name ?? "", r.brand?.logoUrl ?? "")));
+});
+
+router.get("/shoes/new-arrivals", async (_req, res) => {
+  const shoes = await db.select({ shoe: shoesTable, brand: brandsTable })
+    .from(shoesTable)
+    .leftJoin(brandsTable, eq(shoesTable.brandId, brandsTable.id))
+    .where(eq(shoesTable.newArrival, true))
+    .orderBy(desc(shoesTable.createdAt))
+    .limit(8);
+  res.json(shoes.map((r) => formatShoe(r.shoe, r.brand?.name ?? "", r.brand?.logoUrl ?? "")));
+});
+
+router.get("/shoes/:id", async (req, res) => {
+  const id = parseInt(req.params.id);
+  const result = await db.select({ shoe: shoesTable, brand: brandsTable })
+    .from(shoesTable)
+    .leftJoin(brandsTable, eq(shoesTable.brandId, brandsTable.id))
+    .where(eq(shoesTable.id, id))
+    .limit(1);
+  if (!result[0]) return res.status(404).json({ error: "Shoe not found" });
+  res.json(formatShoe(result[0].shoe, result[0].brand?.name ?? "", result[0].brand?.logoUrl ?? ""));
+});
+
+router.get("/brands", async (_req, res) => {
+  const brands = await db.select().from(brandsTable);
+  res.json(brands);
+});
+
+async function getOrCreateCart(sessionId: string) {
+  let cart = await db.select().from(shoeCartsTable).where(eq(shoeCartsTable.sessionId, sessionId)).limit(1);
+  if (!cart[0]) {
+    const created = await db.insert(shoeCartsTable).values({ sessionId }).returning();
+    return created[0];
+  }
+  return cart[0];
 }
 
-.subscribe a:hover{
-background:#cc0000;
+async function buildCart(cart: any) {
+  const items = await db.select({ item: shoeCartItemsTable, shoe: shoesTable, brand: brandsTable })
+    .from(shoeCartItemsTable)
+    .leftJoin(shoesTable, eq(shoeCartItemsTable.shoeId, shoesTable.id))
+    .leftJoin(brandsTable, eq(shoesTable.brandId, brandsTable.id))
+    .where(eq(shoeCartItemsTable.cartId, cart.id));
+
+  const cartItems = items.map((r) => ({
+    id: r.item.id,
+    shoeId: r.item.shoeId,
+    shoeName: r.shoe?.name ?? "",
+    shoeImageUrl: r.shoe?.imageUrl ?? "",
+    brandName: r.brand?.name ?? "",
+    size: r.item.size,
+    color: r.item.color,
+    price: parseFloat(r.shoe?.price ?? "0"),
+    quantity: r.item.quantity,
+    subtotal: parseFloat(r.shoe?.price ?? "0") * r.item.quantity,
+  }));
+
+  return {
+    id: cart.id,
+    sessionId: cart.sessionId,
+    items: cartItems,
+    subtotal: cartItems.reduce((s, i) => s + i.subtotal, 0),
+    itemCount: cartItems.reduce((s, i) => s + i.quantity, 0),
+  };
 }
 
-footer{
-background:#222;
-color:white;
-text-align:center;
-padding:15px;
-margin-top:40px;
-}
+router.get("/cart", async (req, res) => {
+  const { sessionId } = req.query as any;
+  if (!sessionId) return res.status(400).json({ error: "sessionId required" });
+  const cart = await getOrCreateCart(sessionId);
+  res.json(await buildCart(cart));
+});
 
-</style>
+router.post("/cart/items", async (req, res) => {
+  const { sessionId, shoeId, size, color, quantity } = req.body;
+  const cart = await getOrCreateCart(sessionId);
 
-</head>
+  const existing = await db.select().from(shoeCartItemsTable)
+    .where(and(
+      eq(shoeCartItemsTable.cartId, cart.id),
+      eq(shoeCartItemsTable.shoeId, shoeId),
+      eq(shoeCartItemsTable.size, size),
+      eq(shoeCartItemsTable.color, color),
+    )).limit(1);
 
-<body>
+  if (existing[0]) {
+    await db.update(shoeCartItemsTable).set({ quantity: existing[0].quantity + quantity }).where(eq(shoeCartItemsTable.id, existing[0].id));
+  } else {
+    await db.insert(shoeCartItemsTable).values({ cartId: cart.id, shoeId, size, color, quantity });
+  }
 
-<header>
-<h1>My YouTube Channel</h1>
-<p>Welcome to my official website</p>
-</header>
+  res.json(await buildCart(cart));
+});
 
-<div class="container">
+router.put("/cart/items/:itemId", async (req, res) => {
+  const itemId = parseInt(req.params.itemId);
+  const { sessionId, quantity } = req.body;
+  const cart = await getOrCreateCart(sessionId);
+  await db.update(shoeCartItemsTable).set({ quantity }).where(eq(shoeCartItemsTable.id, itemId));
+  res.json(await buildCart(cart));
+});
 
-<div class="video">
+router.delete("/cart/items/:itemId", async (req, res) => {
+  const itemId = parseInt(req.params.itemId);
+  const { sessionId } = req.query as any;
+  const cart = await getOrCreateCart(sessionId);
+  await db.delete(shoeCartItemsTable).where(eq(shoeCartItemsTable.id, itemId));
+  res.json(await buildCart(cart));
+});
 
-<h2>Latest Video</h2>
+router.post("/orders", async (req, res) => {
+  const { sessionId, email, firstName, lastName, address, city, state, zipCode, country, paymentMethod } = req.body;
+  const cart = await getOrCreateCart(sessionId);
+  const built = await buildCart(cart);
 
-<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ"></iframe>
+  if (built.items.length === 0) return res.status(400).json({ error: "Cart is empty" });
 
-</div>
+  const [order] = await db.insert(shoeOrdersTable).values({
+    sessionId, email, firstName, lastName, address, city, state, zipCode, country, paymentMethod,
+    subtotal: String(built.subtotal),
+    total: String(built.subtotal),
+    status: "confirmed",
+  }).returning();
 
-<div class="subscribe">
+  const orderItems = built.items.map((item) => ({
+    orderId: order.id,
+    shoeId: item.shoeId,
+    shoeName: item.shoeName,
+    shoeImageUrl: item.shoeImageUrl,
+    brandName: item.brandName,
+    size: item.size,
+    color: item.color,
+    price: String(item.price),
+    quantity: item.quantity,
+    subtotal: String(item.subtotal),
+  }));
 
-<a href="https://www.youtube.com" target="_blank">Subscribe My Channel</a>
+  await db.insert(shoeOrderItemsTable).values(orderItems);
+  await db.delete(shoeCartItemsTable).where(eq(shoeCartItemsTable.cartId, cart.id));
 
-</div>
+  const items = await db.select().from(shoeOrderItemsTable).where(eq(shoeOrderItemsTable.orderId, order.id));
 
-</div>
+  res.status(201).json({
+    id: order.id, sessionId: order.sessionId, email: order.email,
+    firstName: order.firstName, lastName: order.lastName,
+    address: order.address, city: order.city, state: order.state,
+    zipCode: order.zipCode, country: order.country,
+    items: items.map((i) => ({
+      id: i.id, shoeId: i.shoeId, shoeName: i.shoeName, shoeImageUrl: i.shoeImageUrl,
+      brandName: i.brandName, size: i.size, color: i.color,
+      price: parseFloat(i.price), quantity: i.quantity, subtotal: parseFloat(i.subtotal),
+    })),
+    subtotal: parseFloat(order.subtotal), total: parseFloat(order.total),
+    status: order.status, createdAt: order.createdAt?.toISOString() ?? "",
+  });
+});
 
-<footer>
+router.get("/orders/:id", async (req, res) => {
+  const id = parseInt(req.params.id);
+  const [order] = await db.select().from(shoeOrdersTable).where(eq(shoeOrdersTable.id, id));
+  if (!order) return res.status(404).json({ error: "Order not found" });
+  const items = await db.select().from(shoeOrderItemsTable).where(eq(shoeOrderItemsTable.orderId, order.id));
 
-<p>© 2026 My YouTube Channel</p>
+  res.json({
+    id: order.id, sessionId: order.sessionId, email: order.email,
+    firstName: order.firstName, lastName: order.lastName,
+    address: order.address, city: order.city, state: order.state,
+    zipCode: order.zipCode, country: order.country,
+    items: items.map((i) => ({
+      id: i.id, shoeId: i.shoeId, shoeName: i.shoeName, shoeImageUrl: i.shoeImageUrl,
+      brandName: i.brandName, size: i.size, color: i.color,
+      price: parseFloat(i.price), quantity: i.quantity, subtotal: parseFloat(i.subtotal),
+    })),
+    subtotal: parseFloat(order.subtotal), total: parseFloat(order.total),
+    status: order.status, createdAt: order.createdAt?.toISOString() ?? "",
+  });
+});
 
-</footer>
+router.get("/wishlist", async (req, res) => {
+  const { sessionId } = req.query as any;
+  if (!sessionId) return res.json([]);
+  const items = await db.select({ wl: shoeWishlistTable, shoe: shoesTable, brand: brandsTable })
+    .from(shoeWishlistTable)
+    .leftJoin(shoesTable, eq(shoeWishlistTable.shoeId, shoesTable.id))
+    .leftJoin(brandsTable, eq(shoesTable.brandId, brandsTable.id))
+    .where(eq(shoeWishlistTable.sessionId, sessionId));
+  res.json(items.filter((r) => r.shoe).map((r) => formatShoe(r.shoe!, r.brand?.name ?? "", r.brand?.logoUrl ?? "")));
+});
 
-</body>
-</html>
+router.post("/wishlist/toggle", async (req, res) => {
+  const { sessionId, shoeId } = req.body;
+  const existing = await db.select().from(shoeWishlistTable)
+    .where(and(eq(shoeWishlistTable.sessionId, sessionId), eq(shoeWishlistTable.shoeId, shoeId)))
+    .limit(1);
+
+  if (existing[0]) {
+    await db.delete(shoeWishlistTable).where(eq(shoeWishlistTable.id, existing[0].id));
+    res.json({ added: false, shoeId });
+  } else {
+    await db.insert(shoeWishlistTable).values({ sessionId, shoeId });
+    res.json({ added: true, shoeId });
+  }
+});
+
+export default router;
+
+
+================================================================
+  TOTAL FILES: 6  |  TOTAL LINES: 781
+================================================================
+      
